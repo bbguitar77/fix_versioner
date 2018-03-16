@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument('--jira-username', required=True, help='Jira username.')
     parser.add_argument('--jira-password', required=True, help='Jira password.')
     parser.add_argument('--jira-project', required=True, default='CORE', help='Project to create fix version in.')
-    parser.add_argument('--commit-pattern', default='(?P<key>[\w]*-[\d]*)[ :-](?P<value>.*)', help='Regex pattern used to group commits, <key> and <value> identifiers may be used to specify group order. For example: \'(?P<key>CORE-[\d]*): (?P<value>.*)\' or \'(CORE-[\d]*: (.*)\' could be used for CORE.')
+    parser.add_argument('--commit-pattern', default='^(?P<key>[\w]*-[\d]*)[ :-](?P<value>.*)', help='Regex pattern used to group commits, <key> and <value> identifiers may be used to specify group order. For example: \'(?P<key>CORE-[\d]*): (?P<value>.*)\' or \'(CORE-[\d]*: (.*)\' could be used for CORE.')
     parser.add_argument('--assume-yes', default=False, action='store_true', help='If prompted to continue, assume yes (i.e. there were invalid tickets, would you like to continue tagging valid tickets?).')
     parser.add_argument('--allow-multiple-versions', default=False, help='For some issues there may be changes in multiple applications, if you want a fix version per app use this flag.')
     parser.add_argument('--create-tag', required=False, action='store_true', help='Causes a new tag to be created using the value of --app and a timestamp.')
@@ -42,8 +42,8 @@ def parse_args():
         args.release_name = args.release_name or '%s-%s' % (args.app, datetime.now().strftime('%Y-%m-%dT%H.%M.%SZ'))
         args.previous_tag = args.previous_tag or '%s-*' % args.app
 
-    if args.create_tag and not args.app:
-        parser.error('The --create-tag option needs the --app option to get the tag name.')
+    if not args.release_name:
+        parser.error('Missing required parameter, --app or --release-name must be provided.')
 
     return args
 
@@ -271,14 +271,14 @@ def main():
         sys.exit(-1)
 
     if args.dry_run:
-        print('Done releasing {}! (dry run exit)'.format(release_name))
+        print('Done releasing {}! (dry run exit)'.format(args.release_name))
         sys.exit(-1)
 
     if args.assume_yes is False and not query_yes_no('Would you like to continue tagging valid tickets?'):
         sys.exit(-1)
 
     # Create fix version.
-    fix_version_id = create_fix_version(release_name, args.description, args.jira_project, args.jira_base_url, args.jira_username, args.jira_password)
+    fix_version_id = create_fix_version(args.release_name, args.description, args.jira_project, args.jira_base_url, args.jira_username, args.jira_password)
 
     # Apply fix version to tickets.
     for item in valid_tickets.items():
@@ -288,7 +288,7 @@ def main():
             print('Failure setting fix version for {}: {}'.format(item[0], str(e)))
 
     # Create and push a tag if requested
-    if args.create_tag:
+    if args.create_tag and valid_tickets:
         new_tag = repo.create_tag(args.release_name, message='Automated tag.')
         repo.remotes.origin.push(new_tag)
 
